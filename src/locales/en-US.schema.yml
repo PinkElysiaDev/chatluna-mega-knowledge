@@ -1,0 +1,14 @@
+$inner:
+    - {}
+
+    - $desc: Knowledge Configuration
+      enableTool: Whether to register the knowledge tool for the model to call when domain knowledge is needed.
+      toolName: The tool name registered with chatluna (visible to the model).
+      knowledgeModel: Model used for knowledge Q&A, in platform/model form. deepseek/deepseek-v4-flash is strongly recommended.
+      defaultRetrievalPrompt: Global default retrieval-prompt template, used when an entry has none. Supports single-brace variables such as {question}, {document}, {user}, {guild}, plus built-ins {date}, {weekday}.
+      entries: Knowledge entries. Each bundles a full document with a fixed prompt, and is filtered by preset/bot/platform/guild/channel/user selectors. Empty selectors act as wildcards.
+
+    - $desc: Sticky Session & Caching
+      maxSessionTurns: Maximum Q&A turns kept per sticky session. 0 means unlimited; beyond the limit a sliding window keeps the most recent turns while the system prefix stays stable for prompt-cache hits.
+      sessionTTL: Idle TTL in seconds for sticky sessions; sessions not accessed within this window are evicted.
+      persistSessions: Persist sticky sessions to disk so they survive plugin/process restarts.

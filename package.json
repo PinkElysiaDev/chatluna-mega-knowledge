@@ -2,21 +2,59 @@
   "name": "koishi-plugin-chatluna-mega-knowledge",
   "description": "knowledge plugin designed for massive knowledge based on deepseek-v4-flash",
   "version": "0.0.1",
-  "main": "lib/index.js",
+  "main": "lib/index.cjs",
+  "module": "lib/index.mjs",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "dist"
   ],
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "type": "module",
   "license": "MIT",
-  "scripts": {},
   "keywords": [
     "chatbot",
     "koishi",
-    "plugin"
+    "plugin",
+    "chatluna",
+    "knowledge",
+    "rag",
+    "deepseek"
   ],
-  "devDependencies": {},
+  "scripts": {
+    "build": "atsc -b"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.80",
+    "zod": "3.25.76"
+  },
   "peerDependencies": {
-    "koishi": "^4.18.7"
+    "koishi": "^4.18.7",
+    "koishi-plugin-chatluna": "^1.4.0-alpha.43"
+  },
+  "devDependencies": {
+    "atsc": "^2.1.0",
+    "@types/node": "^20.0.0"
+  },
+  "koishi": {
+    "description": {
+      "zh": "基于 deepseek-v4-flash 的海量知识库插件，将完整知识文档与固定提示词以粘性会话方式喂给模型",
+      "en": "Massive knowledge plugin for chatluna powered by deepseek-v4-flash"
+    },
+    "service": {
+      "required": [
+        "chatluna"
+      ]
+    }
   }
 }
