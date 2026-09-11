@@ -1,14 +1,17 @@
 $inner:
-    - {}
-
     - $desc: Knowledge Configuration
       enableTool: Whether to register the knowledge tool for the model to call when domain knowledge is needed.
       toolName: The tool name registered with chatluna (visible to the model).
-      knowledgeModel: Model used for knowledge Q&A, in platform/model form. deepseek/deepseek-v4-flash is strongly recommended.
-      defaultRetrievalPrompt: Global default retrieval-prompt template, used when an entry has none. Supports single-brace variables such as {question}, {document}, {user}, {guild}, plus built-ins {date}, {weekday}.
-      entries: Knowledge entries. Each bundles a full document with a fixed prompt, and is filtered by preset/bot/platform/guild/channel/user selectors. Empty selectors act as wildcards.
+      knowledgeModel: Model used for knowledge Q&A, in platform/model form (from the platform adapters configured in chatluna).
+      defaultRetrievalPrompt: "Global default retrieval-prompt template, used when an entry has no retrieval prompt of its own. Supports single-brace variables such as {question}, {document}, {user}, {guild}, plus built-ins {date}, {weekday}."
+      entries: "Knowledge entries. Each bundles a full document, a fixed prompt, and a selector rule table; each row is one rule = type (dropdown: preset/bot/platform/guild/channel/user) + value. Multiple rows of the same type match any (e.g. two guild rows share this knowledge base); different types must all match; an empty rule list applies to every environment. The document may be inline text, a local file path, or a remote http(s):// URL."
 
     - $desc: Sticky Session & Caching
-      maxSessionTurns: Maximum Q&A turns kept per sticky session. 0 means unlimited; beyond the limit a sliding window keeps the most recent turns while the system prefix stays stable for prompt-cache hits.
-      sessionTTL: Idle TTL in seconds for sticky sessions; sessions not accessed within this window are evicted.
-      persistSessions: Persist sticky sessions to disk so they survive plugin/process restarts.
+      maxSessionTurns: Maximum Q&A turns kept per sticky session. The default 0 means unlimited; when set, a sliding window keeps the most recent turns while the system prefix stays stable for prompt-cache hits.
+      sessionTTL: Idle TTL in seconds for sticky sessions (7 days by default); sessions not accessed within this window are evicted.
+      persistSessions: Persist sticky sessions to disk so they survive plugin/process restarts. Enabled by default.
+
+    - $desc: Preset Variable & Cache Keep-Alive
+      enableVariable: "Register the {mega_knowledge} preset variable. Put {mega_knowledge} (single braces; {{ }} is a literal escape) in a preset — each request first matches the knowledge entry for the current environment, retrieves the answer and fills the variable before continuing; {mega_knowledge(custom question)} pins the retrieval question."
+      cacheKeepAliveEntries: "Knowledge entry names (one per row, table look) for which the prompt-cache keep-alive runs. At each interval a minimal probe request (asking the model to just reply OK) is sent to keep the upstream prompt cache warm — probing both the entry's base prefix and every sticky session."
+      cacheKeepAliveInterval: Keep-alive probe interval in minutes, 30 by default.

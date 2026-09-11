@@ -1,12 +1,58 @@
-import type { KnowledgeCallContext, KnowledgeEntry, MatchResult } from './types'
+import type {
+    KnowledgeCallContext,
+    KnowledgeEntry,
+    KnowledgeSelectorRule,
+    KnowledgeSelectorType,
+    MatchResult
+} from './types'
+
+const SELECTOR_FIELDS: Record<KnowledgeSelectorType, keyof KnowledgeCallContext> = {
+    preset: 'preset',
+    bot: 'botId',
+    platform: 'platform',
+    guildId: 'guildId',
+    channelId: 'channelId',
+    userId: 'userId'
+}
+
+/**
+ * Collect the effective selector rules of an entry. Configured rules win;
+ * otherwise legacy flat selector fields (pre-rule configs not yet re-saved)
+ * are converted into one rule per non-empty field. An empty result means the
+ * entry is a wildcard that applies to every environment.
+ */
+function collectRules(entry: KnowledgeEntry): KnowledgeSelectorRule[] {
+    const rules = (entry.selectors ?? [])
+        .filter(
+            (rule) =>
+                rule != null &&
+                SELECTOR_FIELDS[rule.type] != null &&
+                (rule.value ?? '').trim() !== ''
+        )
+        .map((rule) => ({ type: rule.type, value: rule.value.trim() }))
+    if (rules.length > 0) return rules
+
+    const legacy: Array<[KnowledgeSelectorType, string | undefined]> = [
+        ['preset', entry.preset],
+        ['bot', entry.bot],
+        ['platform', entry.platform],
+        ['guildId', entry.guildId],
+        ['channelId', entry.channelId],
+        ['userId', entry.userId]
+    ]
+    return legacy
+        .filter(([, value]) => value != null && value.trim() !== '')
+        .map(([type, value]) => ({ type, value: value!.trim() }))
+}
 
 /**
  * Match a single knowledge entry against a call context.
  *
- * A selector field that is empty/blank acts as a wildcard. Every non-wildcard
- * selector must match the corresponding context field exactly for the entry to
- * be considered active. `specificity` counts the non-wildcard fields so the
- * most specific active entry wins.
+ * Rules are grouped by selector type: within one type, any matching rule
+ * suffices (e.g. two guild rows share the entry); every type that has rules
+ * must be satisfied (AND across types). `specificity` counts the constrained
+ * types so the most specific active entry wins; a wildcard entry matches
+ * everything with specificity 0.
  */
 export function matchEntry(
     entry: KnowledgeEntry,
@@ -16,25 +62,28 @@ export function matchEntry(
         return { matched: false, specificity: 0 }
     }
 
-    const checks: Array<[string | undefined, string | undefined]> = [
-        [entry.preset, ctx.preset],
-        [entry.bot, ctx.botId],
-        [entry.platform, ctx.platform],
-        [entry.guildId, ctx.guildId],
-        [entry.channelId, ctx.channelId],
-        [entry.userId, ctx.userId]
-    ]
+    const rules = collectRules(entry)
+    if (rules.length === 0) {
+        return { matched: true, specificity: 0 }
+    }
+
+    const byType = new Map<KnowledgeSelectorType, Set<string>>()
+    for (const rule of rules) {
+        let values = byType.get(rule.type)
+        if (!values) {
+            values = new Set<string>()
+            byType.set(rule.type, values)
+        }
+        values.add(rule.value)
+    }
 
     let specificity = 0
-    for (const [selector, actual] of checks) {
-        if (selector == null || selector.trim() === '') {
-            // wildcard — does not constrain matching
-            continue
-        }
-        specificity++
-        if (actual !== selector) {
+    for (const [type, values] of byType) {
+        const actual = ctx[SELECTOR_FIELDS[type]]
+        if (actual == null || !values.has(actual)) {
             return { matched: false, specificity: 0 }
         }
+        specificity++
     }
     return { matched: true, specificity }
 }

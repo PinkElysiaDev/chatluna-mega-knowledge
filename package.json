@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-chatluna-mega-knowledge",
   "description": "knowledge plugin designed for massive knowledge based on deepseek-v4-flash",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "main": "lib/index.cjs",
   "module": "lib/index.mjs",
   "typings": "lib/index.d.ts",
@@ -43,8 +43,9 @@
     "koishi-plugin-chatluna": "^1.4.0-alpha.43"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "atsc": "^2.1.0",
-    "@types/node": "^20.0.0"
+    "koishi-plugin-chatluna": "^1.4.0-alpha.45"
   },
   "koishi": {
     "description": {

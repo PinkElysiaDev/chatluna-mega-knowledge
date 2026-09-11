@@ -30,7 +30,6 @@ export class SessionManager {
     private readonly _ctx: Context
     private readonly _options: SessionManagerOptions
     private readonly _persistPath: string
-    private _sweepTimer: ReturnType<typeof setInterval> | undefined
     private _dirty = false
 
     constructor(ctx: Context, options: SessionManagerOptions) {
@@ -38,28 +37,17 @@ export class SessionManager {
         this._options = options
         this._persistPath = join(ctx.baseDir, PERSIST_DIR, PERSIST_FILE)
 
+        this._load()
+
+        // Sweep cadence scales with the TTL, clamped between once a minute and
+        // once every 10 minutes.
         const sweepIntervalMs =
             Math.max(60, Math.min(options.ttlSeconds, 600)) * 1000
-
-        if (options.persist) {
-            this._load()
-            this._sweepTimer = setInterval(() => {
-                this._sweep()
-                this._maybeFlush()
-            }, sweepIntervalMs)
-            ctx.effect(() => () => {
-                if (this._sweepTimer) clearInterval(this._sweepTimer)
-                this._maybeFlush(true)
-            })
-        } else {
-            // still sweep in-memory periodically
-            this._sweepTimer = setInterval(() => this._sweep(), sweepIntervalMs)
-            ctx.effect(
-                () => () => {
-                    if (this._sweepTimer) clearInterval(this._sweepTimer)
-                }
-            )
-        }
+        ctx.setInterval(() => {
+            this._sweep()
+            this._maybeFlush()
+        }, sweepIntervalMs)
+        ctx.effect(() => () => this._maybeFlush(true))
     }
 
     /**
@@ -70,7 +58,6 @@ export class SessionManager {
      */
     getOrCreate(
         key: string,
-        entryId: string,
         entryName: string,
         stablePrefix: string
     ): KnowledgeSession {
@@ -82,7 +69,6 @@ export class SessionManager {
 
         const session: KnowledgeSession = {
             key,
-            entryId,
             entryName,
             stablePrefix,
             turns: [],
@@ -94,7 +80,11 @@ export class SessionManager {
     }
 
     /** Append a Q&A turn, applying the sliding window. */
-    appendTurn(session: KnowledgeSession, question: string, answer: string): void {
+    appendTurn(
+        session: KnowledgeSession,
+        question: string,
+        answer: string
+    ): void {
         const turn: KnowledgeSessionTurn = { question, answer }
         session.turns.push(turn)
         const max = this._options.maxTurns
@@ -105,18 +95,18 @@ export class SessionManager {
         this._markDirty()
     }
 
-    /** Drop a single session (e.g. when its entry no longer matches). */
-    drop(key: string): void {
-        if (this._sessions.delete(key)) this._markDirty()
-    }
-
-    clear(): void {
-        this._sessions.clear()
-        this._markDirty()
-    }
-
-    size(): number {
-        return this._sessions.size
+    /**
+     * Read-only list of the sticky sessions bound to an entry name.
+     * Used by the cache keep-alive to probe each session's frozen prefix.
+     */
+    listByEntry(entryName: string): KnowledgeSession[] {
+        const result: KnowledgeSession[] = []
+        for (const session of this._sessions.values()) {
+            if (session.entryName === entryName) {
+                result.push(session)
+            }
+        }
+        return result
     }
 
     private _sweep(): void {
@@ -142,9 +132,7 @@ export class SessionManager {
         this._dirty = false
         try {
             mkdirSync(join(this._ctx.baseDir, PERSIST_DIR), { recursive: true })
-            const payload = JSON.stringify(
-                Array.from(this._sessions.values())
-            )
+            const payload = JSON.stringify(Array.from(this._sessions.values()))
             writeFileSync(this._persistPath, payload, 'utf-8')
         } catch (err) {
             this._ctx.logger.warn(

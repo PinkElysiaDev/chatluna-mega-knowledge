@@ -1,3 +1,26 @@
+/** Selector dimensions a rule can constrain. */
+export type KnowledgeSelectorType =
+    | 'preset'
+    | 'bot'
+    | 'platform'
+    | 'guildId'
+    | 'channelId'
+    | 'userId'
+
+/**
+ * A single selector rule: constrain one dimension to one exact value.
+ *
+ * Rules of the same type are OR'd (any match suffices, e.g. two guilds
+ * sharing one knowledge base); different types are AND'd (all constrained
+ * dimensions must match).
+ */
+export interface KnowledgeSelectorRule {
+    /** Selector dimension this rule constrains. */
+    type: KnowledgeSelectorType
+    /** Exact-match value; blank rules are ignored at match time. */
+    value: string
+}
+
 /**
  * A user-configured knowledge entry.
  *
@@ -8,21 +31,26 @@
 export interface KnowledgeEntry {
     /** Display name; also serves as the session key suffix. */
     name: string
-    /** Full document text, or a path to a file (absolute, or relative to baseDir). */
+    /** Full document text, a local file path, or a remote http(s):// URL. */
     document: string
     /** Per-entry retrieval prompt template; empty falls back to the global default. */
     retrievalPrompt: string
-    /** Selector: preset id. Empty = wildcard. */
+    /**
+     * Selector rules (table rows). Same-type rules are OR'd, different types
+     * are AND'd. Empty list = the entry applies to every environment.
+     */
+    selectors: KnowledgeSelectorRule[]
+    /** @deprecated legacy flat selector, read as a fallback for pre-rule configs. */
     preset?: string
-    /** Selector: bot self id. Empty = wildcard. */
+    /** @deprecated legacy flat selector, read as a fallback for pre-rule configs. */
     bot?: string
-    /** Selector: adapter platform. Empty = wildcard. */
+    /** @deprecated legacy flat selector, read as a fallback for pre-rule configs. */
     platform?: string
-    /** Selector: guild id. Empty = wildcard. */
+    /** @deprecated legacy flat selector, read as a fallback for pre-rule configs. */
     guildId?: string
-    /** Selector: channel id. Empty = wildcard. */
+    /** @deprecated legacy flat selector, read as a fallback for pre-rule configs. */
     channelId?: string
-    /** Selector: user id. Empty = wildcard. */
+    /** @deprecated legacy flat selector, read as a fallback for pre-rule configs. */
     userId?: string
     enabled: boolean
 }
@@ -47,8 +75,6 @@ export interface KnowledgeSessionTurn {
 export interface KnowledgeSession {
     /** `${conversationKey}:${entryName}` */
     key: string
-    /** The id of the knowledge entry this session is bound to. */
-    entryId: string
     /** The display name of the knowledge entry. */
     entryName: string
     /** Frozen system prompt: rendered retrieval prompt + full document. */

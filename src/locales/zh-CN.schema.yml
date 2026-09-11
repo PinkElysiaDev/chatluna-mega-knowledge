@@ -1,14 +1,17 @@
 $inner:
-    - {}
-
     - $desc: 知识库配置
       enableTool: 是否注册知识库工具，供模型在需要特定领域知识时调用。
       toolName: 注册到 chatluna 的工具名称（模型调用时看到的名字）。
-      knowledgeModel: 用于知识库问答的模型，格式为 平台/模型名。强烈建议使用 deepseek/deepseek-v4-flash。
-      defaultRetrievalPrompt: 全局默认检索提示词模板。当知识条目未单独配置时使用。支持单花括号变量，如 {question}、{document}、{user}、{guild} 等，以及内置函数 {date}、{weekday}。
-      entries: 知识条目列表。每条包含一份完整文档与固定提示词，并通过 preset/bot/platform/guild/channel/user 元数据选择器过滤生效环境。留空的选择器视为通配。
+      knowledgeModel: 用于知识库问答的模型，格式为 平台/模型名（取自 chatluna 已配置的平台适配器）。
+      defaultRetrievalPrompt: "全局默认检索提示词模板。当知识条目未单独配置检索提示词时使用。支持单花括号变量，如 {question}、{document}、{user}、{guild} 等，以及内置函数 {date}、{weekday}。"
+      entries: "知识条目列表。"
 
     - $desc: 粘性会话与缓存
-      maxSessionTurns: 粘性会话保留的最大 Q&A 轮次。0 表示不限；超出后按滑窗保留最近 N 轮，系统前缀始终保持稳定以保证 DeepSeek 上下文缓存命中。
-      sessionTTL: 粘性会话的空闲存活秒数，超时未访问将被清理。
-      persistSessions: 是否将粘性会话持久化到磁盘，使其在插件/进程重启后仍可恢复。
+      maxSessionTurns: 粘性会话保留的最大 Q&A 轮次。默认 0 表示不限；设置后超出按滑窗保留最近 N 轮，系统前缀始终保持稳定以保证上下文缓存命中。
+      sessionTTL: 粘性会话的空闲存活秒数，默认 7 天；超时未访问将被清理。
+      persistSessions: 是否将粘性会话持久化到磁盘，使其在插件/进程重启后仍可恢复。默认开启。
+
+    - $desc: 预设变量与缓存保活
+      enableVariable: "是否注册 {mega_knowledge} 预设变量。在预设中写 {mega_knowledge}（单花括号，{{ }} 是字面量转义），每次请求会先按当前环境匹配知识条目、检索并把结论填入变量后再继续；也可写 {mega_knowledge(自定义问题)} 指定检索问题。"
+      cacheKeepAliveEntries: "启用缓存保活的知识库名称列表（每行填一个知识条目名称，table 外观）。到期间隔后自动向知识模型发送最小化探测请求（要求只回复 OK），以最小 token 消耗维持上游提示缓存；对条目的基础前缀和每个粘性会话分别探测。"
+      cacheKeepAliveInterval: 缓存保活探测间隔（分钟），默认 30。

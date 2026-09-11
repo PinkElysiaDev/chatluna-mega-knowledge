@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, extname } from 'node:path'
 import type { Context, Session } from 'koishi'
 import type { KnowledgeCallContext } from './types'
@@ -19,18 +19,69 @@ const TEXT_EXTENSIONS = new Set([
     '.org'
 ])
 
-const documentCache = new Map<string, string>()
+const REMOTE_URL_PATTERN = /^https?:\/\//i
+const REMOTE_CACHE_TTL = 5 * 60 * 1000
+const REMOTE_FETCH_TIMEOUT = 30_000
+
+const remoteDocumentCache = new Map<
+    string,
+    { content: string; fetchedAt: number }
+>()
+
+// Local documents are cached with their mtime so edits are picked up without
+// a plugin reload.
+const documentCache = new Map<string, { content: string; mtimeMs: number }>()
 
 /**
- * Heuristically detect whether `value` points to a file. A value is treated as
- * a path only if it has a recognised text-document extension and resolves to an
- * existing file (absolute, or relative to `baseDir`). Otherwise the value is
- * returned verbatim as inline document text.
+ * Fetch a remote knowledge document over HTTP(S). Results are cached in memory
+ * for a short TTL; on fetch failure a stale cached copy is served if available.
  */
-export function loadDocument(ctx: Context, value: string): string {
-    const trimmed = (value ?? '').trim()
-    if (trimmed === '') return ''
+async function fetchRemoteDocument(
+    ctx: Context,
+    url: string
+): Promise<string> {
+    const cached = remoteDocumentCache.get(url)
+    if (cached && Date.now() - cached.fetchedAt < REMOTE_CACHE_TTL) {
+        return cached.content
+    }
 
+    try {
+        const content = await ctx.http.get(url, {
+            responseType: 'text',
+            timeout: REMOTE_FETCH_TIMEOUT
+        })
+        if (typeof content !== 'string') {
+            throw new Error('response is not text')
+        }
+        remoteDocumentCache.set(url, { content, fetchedAt: Date.now() })
+        return content
+    } catch (err) {
+        if (cached) {
+            ctx.logger.warn(
+                `mega-knowledge: failed to refresh remote document ${url}, serving stale cache:`,
+                err
+            )
+            return cached.content
+        }
+        throw new Error(
+            `Failed to fetch knowledge document from ${url}: ${
+                err instanceof Error ? err.message : String(err)
+            }`
+        )
+    }
+}
+
+/**
+ * Load a local document. A value is treated as a path only if it has a
+ * recognised text-document extension and resolves to an existing file
+ * (absolute, or relative to `baseDir`); any other value is inline document
+ * text and returned verbatim.
+ */
+function loadLocalDocument(
+    ctx: Context,
+    value: string,
+    trimmed: string
+): string {
     const ext = extname(trimmed).toLowerCase()
     if (!TEXT_EXTENSIONS.has(ext)) {
         return value
@@ -38,43 +89,66 @@ export function loadDocument(ctx: Context, value: string): string {
 
     const candidate = isAbsolute(trimmed) ? trimmed : join(ctx.baseDir, trimmed)
     if (!existsSync(candidate)) {
-        // fall back: maybe it really is inline text that happens to end with an ext
         return value
     }
 
-    const cached = documentCache.get(candidate)
-    if (cached !== undefined) return cached
-
     try {
+        const mtimeMs = statSync(candidate).mtimeMs
+        const cached = documentCache.get(candidate)
+        if (cached !== undefined && cached.mtimeMs === mtimeMs) {
+            return cached.content
+        }
         const content = readFileSync(candidate, 'utf-8')
-        documentCache.set(candidate, content)
+        documentCache.set(candidate, { content, mtimeMs })
         return content
     } catch {
+        // the file vanished or became unreadable between the checks
         return value
     }
 }
 
 /**
+ * Resolve an entry's `document` config into document text. Remote URLs
+ * (`http(s)://`) are fetched (throws on failure with no cache); other values
+ * go through the local path / inline-text heuristics.
+ */
+export async function loadDocument(
+    ctx: Context,
+    value: string
+): Promise<string> {
+    const trimmed = (value ?? '').trim()
+    if (trimmed === '') return ''
+
+    if (REMOTE_URL_PATTERN.test(trimmed)) {
+        return fetchRemoteDocument(ctx, trimmed)
+    }
+    return loadLocalDocument(ctx, value, trimmed)
+}
+
+/**
  * Build the variable map exposed to retrieval-prompt templates (single-brace
  * `{var}` syntax, rendered by `ctx.chatluna.promptRenderer`).
+ *
+ * The prefix is deliberately question-independent: `{question}` renders as an
+ * empty string and the live question is always sent as the trailing
+ * HumanMessage instead, so the frozen prefix stays byte-stable.
  */
 export function buildVariables(
-    question: string,
     documentText: string,
     entryName: string,
-    ctxMeta: KnowledgeCallContext
+    callContext: KnowledgeCallContext
 ): Record<string, unknown> {
     return {
-        question,
+        question: '',
         document: documentText,
         knowledge_name: entryName,
-        user: ctxMeta.userId ?? '',
-        bot: ctxMeta.botId ?? '',
-        platform: ctxMeta.platform ?? '',
-        guild: ctxMeta.guildId ?? '',
-        channel: ctxMeta.channelId ?? '',
-        preset: ctxMeta.preset ?? '',
-        conversation_id: ctxMeta.conversationId ?? ''
+        user: callContext.userId ?? '',
+        bot: callContext.botId ?? '',
+        platform: callContext.platform ?? '',
+        guild: callContext.guildId ?? '',
+        channel: callContext.channelId ?? '',
+        preset: callContext.preset ?? '',
+        conversation_id: callContext.conversationId ?? ''
     }
 }
 
@@ -92,11 +166,15 @@ export async function renderPromptTemplate(
 ): Promise<string> {
     if (!source || source.trim() === '') return ''
 
-    const result = await ctx.chatluna.promptRenderer.renderTemplate(source, variables, {
-        configurable: {
-            session,
-            conversationId
+    const result = await ctx.chatluna.promptRenderer.renderTemplate(
+        source,
+        variables,
+        {
+            configurable: {
+                session,
+                conversationId
+            }
         }
-    })
+    )
     return result.text
 }
